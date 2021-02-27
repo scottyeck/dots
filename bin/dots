@@ -1,7 +1,81 @@
 #!/bin/bash
 
+# Constants
+
+_link="link"
+_unlink="unlink"
+_check_health="checkhealth"
+
+_info="INFO"
+_warn="WARN"
+_error="ERROR"
+
+DOTSRC_FILE="$HOME/.dotsrc"
+
+# logging
+
+log () {
+  local seeking=$1
+  local log_levels=($_info $_warn $_error)
+  LEVEL="NONE"
+  for element in ${log_levels[@]}; do
+      if [[ $element == "$seeking" ]]; then
+          LEVEL=$element
+          shift
+          break
+      fi
+  done
+  # TODO; conditionally log based on level
+  echo "... dots [$LEVEL]: $@"
+}
+
+err () {
+  log $_error "$@"
+  exit 1
+}
+
+# setup
+
+check_env () {
+  if [ ! -f "$DOTSRC_FILE" ]; then
+    err "dots configuration file not found"
+    # TODO: Error messaging
+  fi
+}
+
+# subcommands
+
+link () {
+  log $_info "link"
+}
+
+unlink () {
+  log $_info "unlink"
+}
+
+check_health () {
+  # Currently a dummy exit, since check_env occurs
+  # at runtime start.
+  log "Healthcheck succeeded with 0 errors."
+  return 0
+}
+
+# main
+
 dots () {
-  echo "hello dots"
+  check_env
+
+  local subcommand=$1
+  
+  if [[ $subcommand = $_link ]]; then
+    link "$@"
+  elif [[ $subcommand = $_unlink ]]; then
+    unlink "$@"
+  elif [[ $subcommand = $_check_health ]]; then
+    check_health "$@"
+  else
+    err "Invalid subcommand: $1"
+  fi
 }
 
 dots "$@"
