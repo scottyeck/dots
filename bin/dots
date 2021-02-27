@@ -1,0 +1,7 @@
+#!/bin/bash
+
+dots () {
+  echo "hello dots"
+}
+
+dots "$@"
