@@ -5,12 +5,21 @@
 _link="link"
 _unlink="unlink"
 _check_health="checkhealth"
+_init="init"
+_target="target"
+_install="install"
 
 _info="INFO"
 _warn="WARN"
 _error="ERROR"
 
 DOTSRC_FILE="$HOME/.dotsrc"
+
+DOTSRC_FILE_TEMPLATE="# .dotsrc
+
+target: 
+links:
+"
 
 # logging
 
@@ -26,7 +35,9 @@ log () {
       fi
   done
   # TODO; conditionally log based on level
-  echo "... dots [$LEVEL]: $@"
+  local raw_message="... dots [$LEVEL]: $@"
+  local message="$(echo "$raw_message" | sed 's/^-/    -/')"
+  echo "$message"
 }
 
 err () {
@@ -34,23 +45,182 @@ err () {
   exit 1
 }
 
+subcommand () {
+  log $_info "Calling subcommand - $@"
+}
+
+# utils
+
+get_dotsrc_content () {
+  # Remove comments / blank lines
+  cat "$DOTSRC_FILE" \
+    | grep -v "#" \
+    | sed 's/^$//'
+}
+
+get_target () {
+  local raw="$(echo $(get_dotsrc_content) | grep "target: " | awk '{print $2}')"
+  eval echo "$(echo $raw)"
+}
+
+get_seeds () {
+  local raw="$(echo $(get_dotsrc_content) | grep -v 'target: ' | sed 's/  - //')"
+  eval echo "$(echo $raw)"
+}
+
+check_link () {
+  local seed=$1
+  local dest="$(get_target)/$seed"
+
+  if [ ! -f $dest ]; then
+    err "Dest file \"$dest\" not found."
+  fi
+
+  if [ "$(readlink $seed)" != $dest ]; then
+    err "Link \"$seed\" not found."
+  fi
+}
+
+
 # setup
 
 check_env () {
   if [ ! -f "$DOTSRC_FILE" ]; then
-    err "dots configuration file not found"
+    err "dots configuration file not found: Run \"dots init\" to get started."
     # TODO: Error messaging
+  fi
+
+  if [ "$(pwd)" != "$HOME" ]; then
+    err "Please run dots from your home directory. Thank you!"
+    # TODO: Support unsafe
+  fi
+
+  local TARGET=$(get_target)
+  if [ ! -d "$TARGET" ]; then
+    err "Could not find target directory: \"$TARGET\""
   fi
 }
 
 # subcommands
 
-link () {
-  log $_info "link"
+sub_link () {
+  subcommand "link $@"
+  local seed=$1
+  local dest="$(get_target)/$seed"
+  shift
+
+  DRY_RUN=false
+  while getopts "d" opt "$@"; do
+    case ${opt} in
+      d )
+        DRY_RUN=true
+        ;;
+    esac
+    shift $((OPTIND -1))
+  done
+
+  if [ ! -f $seed ]; then
+    err "Cannot create link - seed file \"$seed\" not found."
+  fi
+
+  if [ -f $dest ]; then
+    err "Cannot create link - dest file \"$dest\" already exists."
+  fi
+
+  log $_info "Moving seed file...
+- seed: $seed
+- dest: $dest"
+  move_command="mv $seed $dest"
+  if $DRY_RUN; then
+    echo "$ $move_command"
+  else
+    eval $move_command
+  fi
+
+  log $_info "Creating link...
+- seed: $seed
+- dest: $dest"
+  link_command="ln -sf $dest $seed"
+  if $DRY_RUN; then
+    echo "$ $link_command"
+  else
+    eval $link_command
+  fi
+
+  log $_info "Updating .dotsrc..."
+  update_command="echo \"  - $seed\" >> $DOTSRC_FILE"
+  if $DRY_RUN; then
+    echo "$ $update_command"
+  else
+    eval $update_command
+  fi
+
+  if [ $DRY_RUN = false ]; then
+    echo "Dot successfully linked!"
+  fi
 }
 
-unlink () {
-  log $_info "unlink"
+sub_unlink () {
+  subcommand "unlink $@"
+  local seed=$1
+  local dest="$(get_target)/$seed"
+  shift
+
+  DRY_RUN=false
+  while getopts "d" opt "$@"; do
+    case ${opt} in
+      d )
+        DRY_RUN=true
+        ;;
+    esac
+    shift $((OPTIND -1))
+  done
+
+  if [ ! -f $dest ]; then
+    err "Cannot unlink - dest file \"$dest\" not found."
+  fi
+
+  if [ "$(readlink $seed)" != $dest ]; then
+    err "Cannot create link - link \"$seed\" not found."
+  fi
+
+  log $_info "Unlinking...
+- seed: $seed
+- dest: $dest"
+  unlink_command="unlink $seed"
+  if $DRY_RUN; then
+    echo "$ $unlink_command"
+  else
+    eval $unlink_command
+  fi
+
+  log $_info "Replacing seed...
+- seed: $seed
+- dest: $dest"
+  replace_command="mv $dest $seed"
+  if $DRY_RUN; then
+    echo "$ $replace_command"
+  else
+    eval $replace_command
+  fi
+
+  log $_info "Updating .dotsrc..."
+  if $DRY_RUN; then
+    # TODO: Better dry run
+    echo "TODO: better dry run"
+  else
+    # TODO: Get rid of tempfile
+    cat $DOTSRC_FILE | grep -v -- " - $seed" > .dotsrc.tmp
+    mv .dotsrc.tmp $DOTSRC_FILE
+  fi
+
+  if [ $DRY_RUN = false ]; then
+    echo "Dot successfully unlinked!"
+  fi
+}
+
+sub_install () {
+  echo "$(get_seeds)"
 }
 
 check_health () {
@@ -60,22 +230,66 @@ check_health () {
   return 0
 }
 
+init () {
+  log $_info "init"
+
+  # Extra defense.
+  if [ -f "$DOTSRC_FILE" ]; then
+    err "Cannot run \"dots init\" because \".dotsrc\" already exists!"
+  fi
+
+  echo "$DOTSRC_FILE_TEMPLATE" > $DOTSRC_FILE \
+    && log "Successfully created .dotsrc." \
+    || err "Could not create ~/.dotsrc"
+}
+
+target () {
+  log "Target directory: $(get_target)"
+}
+
 # main
 
 dots () {
-  check_env
 
   local subcommand=$1
   
-  if [[ $subcommand = $_link ]]; then
-    link "$@"
-  elif [[ $subcommand = $_unlink ]]; then
-    unlink "$@"
-  elif [[ $subcommand = $_check_health ]]; then
+  #
+  # Setup
+  #
+  if [[ $subcommand = $_init ]]; then
+    init "$@"
+    exit 0
+  elif [[ $subcommand = $_target ]]; then
+    target "$@"
+    exit 0
+  fi
+
+  #
+  # If unrelated to setup, we can assume that the
+  # env should be OK, so validate.
+  #
+  check_env
+
+  #
+  # Process subcommands
+  #
+  if [[ $subcommand = $_check_health ]]; then
+    shift
     check_health "$@"
+  elif [[ $subcommand = $_link ]]; then
+    shift
+    sub_link "$@"
+  elif [[ $subcommand = $_unlink ]]; then
+    shift
+    sub_unlink "$@"
+  elif [[ $subcommand = $_install ]]; then
+    shift
+    sub_install "$@"
   else
     err "Invalid subcommand: $1"
   fi
+
+  exit 0
 }
 
 dots "$@"
