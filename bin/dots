@@ -7,6 +7,7 @@ _unlink="unlink"
 _check_health="checkhealth"
 _init="init"
 _target="target"
+_list="list"
 _install="install"
 
 _info="INFO"
@@ -60,12 +61,12 @@ get_dotsrc_content () {
 
 get_target () {
   local raw="$(echo $(get_dotsrc_content) | grep "target: " | awk '{print $2}')"
+  # Pass to eval to expand $HOME
   eval echo "$(echo $raw)"
 }
 
 get_seeds () {
-  local raw="$(echo $(get_dotsrc_content) | grep -v 'target: ' | sed 's/  - //')"
-  eval echo "$(echo $raw)"
+  echo "$(get_dotsrc_content)" | grep -v "target:\|links:\$" | sed 's/^ - //'
 }
 
 check_link () {
@@ -73,11 +74,13 @@ check_link () {
   local dest="$(get_target)/$seed"
 
   if [ ! -f $dest ]; then
-    err "Dest file \"$dest\" not found."
+    log $info "Dest file \"$dest\" not found."
+    return 1
   fi
 
   if [ "$(readlink $seed)" != $dest ]; then
-    err "Link \"$seed\" not found."
+    log $info "Link \"$seed\" not found."
+    return 1
   fi
 }
 
@@ -130,11 +133,11 @@ sub_link () {
   log $_info "Moving seed file...
 - seed: $seed
 - dest: $dest"
-  move_command="mv $seed $dest"
   if $DRY_RUN; then
-    echo "$ $move_command"
+    echo "$ mv $seed $dest"
   else
-    eval $move_command
+    mkdir -p $(dirname $dest)
+    mv $seed $dest
   fi
 
   log $_info "Creating link...
@@ -220,7 +223,16 @@ sub_unlink () {
 }
 
 sub_install () {
-  echo "$(get_seeds)"
+  subcommand "install $@"
+  seeds="$(get_seeds)"
+
+  while IFS= read -r seed; do
+    if check_link $seed; then
+      echo "[OK] seed: $seed"
+    else
+      sub_link $seed
+    fi
+  done <<< $seeds
 }
 
 check_health () {
@@ -243,8 +255,12 @@ init () {
     || err "Could not create ~/.dotsrc"
 }
 
-target () {
+sub_target () {
   log "Target directory: $(get_target)"
+}
+
+sub_list () {
+  log "Seeds: $(get_seeds)"
 }
 
 # main
@@ -258,9 +274,6 @@ dots () {
   #
   if [[ $subcommand = $_init ]]; then
     init "$@"
-    exit 0
-  elif [[ $subcommand = $_target ]]; then
-    target "$@"
     exit 0
   fi
 
@@ -285,6 +298,12 @@ dots () {
   elif [[ $subcommand = $_install ]]; then
     shift
     sub_install "$@"
+  elif [[ $subcommand = $_target ]]; then
+    sub_target "$@"
+    exit 0
+  elif [[ $subcommand = $_list ]]; then
+    sub_list "$@"
+    exit 0
   else
     err "Invalid subcommand: $1"
   fi
