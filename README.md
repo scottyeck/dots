@@ -5,11 +5,9 @@
 ## Usage
 
 ```bash
-# Create a link from a trackable dotfile to its target.
-$ dots link
+# Move a dotfile to a trackable location and link it.
+$ dots .examplerc
 
-# Copy an existing dotfile to a trackable location and link.
-$ dots link-existing
-
-$ dots unlink
+# Unlink and replace dotfile to its original location
+$ dots unlink .examplerc
 ```

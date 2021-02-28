@@ -302,7 +302,7 @@ sub_list () {
 
 # main
 
-dots () {
+apply () {
 
   local subcommand=$1
   
@@ -351,4 +351,4 @@ dots () {
   exit 0
 }
 
-dots "$@"
+apply "$@"
