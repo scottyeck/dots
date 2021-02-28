@@ -9,6 +9,7 @@ _init="init"
 _target="target"
 _list="list"
 _install="install"
+_clean="clean"
 
 _info="INFO"
 _warn="WARN"
@@ -65,8 +66,17 @@ get_target () {
   eval echo "$(echo $raw)"
 }
 
+get_seed_lines () {
+  echo "$(get_dotsrc_content)" | grep -v "target:\|links:\$"
+}
+
 get_seeds () {
-  echo "$(get_dotsrc_content)" | grep -v "target:\|links:\$" | sed 's/^ - //'
+  echo "$(get_seed_lines)" | sed 's/^ - //'
+}
+
+format_seed_line () {
+  seed=$1
+  echo "\" - $seed\""
 }
 
 check_link () {
@@ -84,6 +94,25 @@ check_link () {
   fi
 }
 
+get_clean_seed_lines () {
+  echo "$(get_seed_lines | sort | uniq)"
+}
+
+cleanup_seed_lines () {
+  header="$(head -n 4 $DOTSRC_FILE)"
+  seeds="$(get_clean_seed_lines)"
+  echo "$header$seeds" > $DOTSRC_FILE
+}
+
+add_seed_line () {
+  seed=$1
+  echo $(format_seed_line $seed) >> $DOTSRC_FILE
+  cleanup_seed_lines
+}
+
+remove_seed_line () {
+  seed=$1
+}
 
 # setup
 
@@ -222,6 +251,12 @@ sub_unlink () {
   fi
 }
 
+sub_clean () {
+  subcommand "clean $@"
+
+  cleanup_seed_lines
+}
+
 sub_install () {
   subcommand "install $@"
   seeds="$(get_seeds)"
@@ -233,6 +268,8 @@ sub_install () {
       sub_link $seed
     fi
   done <<< $seeds
+
+  cleanup_seed_lines
 }
 
 check_health () {
@@ -303,6 +340,9 @@ dots () {
     exit 0
   elif [[ $subcommand = $_list ]]; then
     sub_list "$@"
+    exit 0
+  elif [[ $subcommand = $_clean ]]; then
+    sub_clean "$@"
     exit 0
   else
     err "Invalid subcommand: $1"
